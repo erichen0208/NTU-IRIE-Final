@@ -1,0 +1,19 @@
+# Custom
+*.zip
+law/
+law_zipped/
+
+# Common
+.DS_Store
+.vscode/
+*.pyc
+*.pyo
+__pycache__/
+venv/
+env/
+ENV/
+*.log
+*.tmp
+*.bak
+*.swp
+*~
