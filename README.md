@@ -24,6 +24,11 @@ To set up the environment and install the necessary dependencies, follow these s
 ## Usage
 
 To run the main script and retrieve relevant legal documents, use the following command:
-
-```sh
-python main.py
+    ## run
+    ```sh
+    python main.py
+    ```
+    ## Or you can set mode and assign GPU
+    ```sh
+    CUDA_VISIBLE_DEVICES=0 python main.py --mode train --config config.json
+    ```
