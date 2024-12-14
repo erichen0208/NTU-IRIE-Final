@@ -1,0 +1,13 @@
+{
+    "tokenizer_name": "bert-base-chinese",
+    "model_name": "ckiplab/bert-base-chinese-ws",
+    "provision_path": "./data/law.jsonl",
+    "train_data_path": "./data/train_data.jsonl",
+    "test_data_path": "./data/test_data.jsonl",
+    "model_save_path": "./model_checkpoints/bert_model",
+    "embeddings_save_path": "./model_checkpoints/embeddings.pkl",
+    "epochs": 2,
+    "batch_size": 32,
+    "max_length": 128,
+    "learning_rate": 1e-5
+}
