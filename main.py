@@ -16,7 +16,7 @@ def main():
     retriever = Retriever(config)
 
     if args.mode == 'train':
-        print("Starting training mode...")
+        print("Starting train mode...")
 
         # Load law documents
         provisions = {}

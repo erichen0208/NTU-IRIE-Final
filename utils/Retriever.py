@@ -14,6 +14,7 @@ import numpy as np
 from utils.LawDataset import LawDataset
 from utils.Loss import Loss
 
+import os
 import faiss
 from utils.law_list import law_list
 
@@ -31,7 +32,7 @@ class Retriever:
         self.model = AutoModel.from_pretrained(self.config['model_save_path'], config=config)
         self.tokenizer = BertTokenizerFast.from_pretrained(self.config['tokenizer_name'])
 
-    def training_embeddings(self, batch, model, device):
+    def get_embeddings(self, batch, model, device):
         query, pos_provision, neg_provision = batch
         query, pos_provision, neg_provision = query.to(device), pos_provision.to(device), neg_provision.to(device)
 
@@ -111,7 +112,7 @@ class Retriever:
 
             for batch in batch_bar:
                 # Get embeddings
-                query_embeddings, pos_provision_embeddings, neg_provision_embeddings = self.training_embeddings(batch, model, device)
+                query_embeddings, pos_provision_embeddings, neg_provision_embeddings = self.get_embeddings(batch, model, device)
 
                 # Compute loss
                 loss = loss_fn(query_embeddings, pos_provision_embeddings, neg_provision_embeddings)
@@ -135,7 +136,7 @@ class Retriever:
                 batch_bar = tqdm(val_dataloader, desc=f"Epoch {epoch + 1}/{epochs} [Val]", unit="batch", leave=False)
                 for batch in batch_bar:
                     # Get embeddings
-                    query_embeddings, pos_provision_embeddings, neg_provision_embeddings = self.training_embeddings(batch, model, device)
+                    query_embeddings, pos_provision_embeddings, neg_provision_embeddings = self.get_embeddings(batch, model, device)
                     
                     # Compute loss
                     loss = loss_fn(query_embeddings, pos_provision_embeddings, neg_provision_embeddings)
@@ -149,16 +150,6 @@ class Retriever:
         print("Training completed!")
 
     def generate_provision_embeddings(self):
-        """
-        Generate embeddings for all provisions in the dataset
-
-        Args:
-        - provisions: Dictionary of law provisions
-
-        Returns:
-        - provision_embeddings: List of provision embeddings
-        """
-
         config = self.config
 
         model_path = config['model_save_path']
@@ -189,6 +180,11 @@ class Retriever:
         dim = provision_embeddings.shape[1]
         print(f"Embedding dimension: {dim}, Number of provisions: {provision_embeddings.shape[0]}")
         
+        embedding_save_path = config["embeddings_save_path"]
+        directory = os.path.dirname(embedding_save_path)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
         faiss_index = faiss.IndexFlatL2(dim) 
         faiss_index.add(provision_embeddings) 
         faiss.write_index(faiss_index, config["embeddings_save_path"])
@@ -271,22 +267,11 @@ class Retriever:
         self.write_submission_csv(provision_list)
 
     def normalize_embeddings(self, embeddings):
-        """Normalize each embedding to unit norm (L2 norm = 1)"""
         norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
         normalized_embeddings = embeddings / norms
         return normalized_embeddings
     
     def calculate_f1_score(self, ground_truth, predictions):
-        """
-        Calculate F1 score for a batch of queries.
-
-        Args:
-        - ground_truth: Tensor of shape (batch_size, num_docs), binary values {0, 1}
-        - predictions: Tensor of shape (batch_size, num_docs), binary values {0, 1}
-        
-        Returns:
-        - f1_score: The average F1 score for the batch
-        """
         batch_f1_scores = []
 
         for i in range(ground_truth.shape[0]):  # Loop over each query
