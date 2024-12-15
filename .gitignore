@@ -2,6 +2,9 @@
 *.zip
 law/
 law_zipped/
+models/
+embeddings/
+submissions.csv
 
 # Common
 .DS_Store

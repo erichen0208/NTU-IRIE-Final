@@ -7,21 +7,26 @@ class Loss(nn.Module):
         self.margin = margin
     
     def forward(self, query_embedding, positive_embeddings, negative_embeddings):
-        positive_similarities = torch.stack([
-            torch.nn.functional.cosine_similarity(query_embedding, pos_emb)
-            for pos_emb in positive_embeddings
-        ], dim=1)  # Shape: [batch_size, num_positives]
+        """
+        query_embedding: [batch_size, hidden_dim] 
+        positive_embeddings: [batch_size, num_positives, hidden_dim] 
+        negative_embeddings: [batch_size, num_negatives, hidden_dim]
+        """
         
-        # Calculate cosine similarity for each negative embedding
-        negative_similarities = torch.stack([
-            torch.nn.functional.cosine_similarity(query_embedding, neg_emb)
-            for neg_emb in negative_embeddings
-        ], dim=1)  # Shape: [batch_size, num_negatives]
+        # Step 1: Normalize all embeddings
+        query_embedding = nn.functional.normalize(query_embedding, p=2, dim=1)  # Shape: [batch_size, hidden_dim]
+        positive_embeddings = nn.functional.normalize(positive_embeddings, p=2, dim=2)  # Shape: [batch_size, num_positives, hidden_dim]
+        negative_embeddings = nn.functional.normalize(negative_embeddings, p=2, dim=2)  # Shape: [batch_size, num_negatives, hidden_dim]
         
-        # Calculate the mean similarity for positive and negative embeddings
+        # Step 2: Compute cosine similarity
+        positive_similarities = torch.bmm(positive_embeddings, query_embedding.unsqueeze(2)).squeeze(2)  # [batch_size, num_positives]
+        negative_similarities = torch.bmm(negative_embeddings, query_embedding.unsqueeze(2)).squeeze(2)  # [batch_size, num_negatives]
+        
+        # Step 3: Calculate the mean similarity for positive and negative embeddings
         positive_distance = positive_similarities.mean(dim=1)  # Shape: [batch_size]
         negative_distance = negative_similarities.mean(dim=1)  # Shape: [batch_size]
         
-        # Contrastive loss calculation (using ReLU to apply the margin)
-        loss = torch.mean(torch.relu(self.margin + negative_distance - positive_distance))  # Shape: scalar loss
+        # Step 4: Contrastive loss (ReLU to apply margin)
+        loss = torch.mean(torch.relu(negative_distance - positive_distance + self.margin))  # Scalar loss
         return loss
+
