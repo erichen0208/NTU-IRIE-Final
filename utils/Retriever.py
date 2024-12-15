@@ -17,6 +17,7 @@ from utils.Loss import Loss
 import os
 import faiss
 from utils.law_list import law_list
+from utils.ProvisionDataset import ProvisionDataset
 
 class Retriever:
     def __init__(self, config):
@@ -27,10 +28,14 @@ class Retriever:
         # self.tokenizer = BertTokenizerFast.from_pretrained(config['tokenizer_name'])
         # self.model = AutoModel.from_pretrained(config['model_name'])
         
-    def load_model(self):
-        config = AutoConfig.from_pretrained(self.config['model_save_path'])
-        self.model = AutoModel.from_pretrained(self.config['model_save_path'], config=config)
-        self.tokenizer = BertTokenizerFast.from_pretrained(self.config['tokenizer_name'])
+    def load_model(self, pretrained = False):
+        if pretrained:
+            self.model = AutoModel.from_pretrained(self.config['model_name'])
+            self.tokenizer = BertTokenizerFast.from_pretrained(self.config['tokenizer_name'])
+        else:
+            config = AutoConfig.from_pretrained(self.config['model_save_path'])
+            self.model = AutoModel.from_pretrained(self.config['model_save_path'], config=config)
+            self.tokenizer = BertTokenizerFast.from_pretrained(self.config['tokenizer_name'])
 
     def get_embeddings(self, batch, model, device):
         query, pos_provision, neg_provision = batch
@@ -70,9 +75,8 @@ class Retriever:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {device}")
 
-        
-        # model = self.model.to(device) 
-        model = self.load_model().to(device)
+        self.load_model(pretrained=True)
+        model = self.model.to(device)
         tokenizer = self.tokenizer
 
         num_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
@@ -100,7 +104,6 @@ class Retriever:
 
         loss_fn = Loss()
         optimizer = AdamW(model.parameters(), lr=learning_rate)
-
         
         for epoch in tqdm(range(epochs), desc="Epoch Progress", unit="epoch"):
             # -----------------------------
@@ -152,27 +155,27 @@ class Retriever:
     def generate_provision_embeddings(self):
         config = self.config
 
-        model_path = config['model_save_path']
-        bert_config = AutoConfig.from_pretrained(model_path)
-        model = AutoModel.from_pretrained(model_path, config=bert_config)
-        tokenizer = BertTokenizerFast.from_pretrained(config['tokenizer_name'])
-        
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {device}")
 
+        self.load_model(pretrained=False)
+        model = self.model.to(device)
+        tokenizer = self.tokenizer
+
+        provision_dataset = ProvisionDataset(law_list, tokenizer, config['max_length'])
+        provision_dataloader = DataLoader(provision_dataset, batch_size=8, shuffle=False)
+
         model = model.to(device)
         provision_embeddings = []
-        for provision in tqdm(law_list, desc="Processing Provisions", unit="provision"):
-            provision_content = provision['content']
-            provision_input = tokenizer(provision_content, padding='max_length', max_length=config['max_length'], truncation=True, return_tensors="pt")
-            provision_input = provision_input['input_ids'].to(device)
-            attention_mask = (provision_input > 0).to(device)
+        for provision_inputs in tqdm(provision_dataloader, desc="Processing Provisions", unit="batch"):
+            provision_inputs = provision_inputs.to(device)
+            attention_mask = (provision_inputs > 0).to(device)
 
             with torch.no_grad():  
-                provision_outputs = model(provision_input, attention_mask=attention_mask)
+                provision_outputs = model(provision_inputs, attention_mask=attention_mask)
 
             provision_embedding = provision_outputs.last_hidden_state[:, 0, :].detach().cpu().numpy()
-            provision_embeddings.append(provision_embedding)
+            provision_embeddings.extend(provision_embedding)
 
         # FAISS: Initialize the index
         provision_embeddings = np.vstack(provision_embeddings)  
@@ -199,15 +202,12 @@ class Retriever:
     def generate_query_embeddings(self, queries: List[str]):
         config = self.config
 
-        model_path = config['model_save_path']
-        bert_config = AutoConfig.from_pretrained(model_path)
-        model = AutoModel.from_pretrained(model_path, config=bert_config)
-        tokenizer = BertTokenizerFast.from_pretrained(config['tokenizer_name'])
-        
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {device}")
 
-        model = model.to(device)
+        self.load_model(pretrained=True)
+        model = self.model.to(device)
+        tokenizer = self.tokenizer
 
         query_embeddings = []
         for query in tqdm(queries, desc="Processing Querys", unit="query"):
@@ -221,16 +221,21 @@ class Retriever:
             query_embedding = query_outputs.last_hidden_state[:, 0, :].detach().cpu().numpy().flatten()
             query_embeddings.append(query_embedding)
 
-        return np.vstack(query_embeddings)
+        query_embeddings = np.vstack(query_embeddings)
+        return self.normalize_embeddings(query_embeddings)
     
     def test(self, queries, k = 5):
+        config = self.config
+        if os.path.exists(config['embeddings_save_path']) == False:
+            print("Please generate provision embeddings first!")
+            return
+        
         # Load provision embeddings
         index = self.load_provision_embeddings()
         res = faiss.StandardGpuResources() 
         index = faiss.index_cpu_to_gpu(res, 0, index)
 
         query_embeddings = self.generate_query_embeddings(queries) # Shape (N, D)
-        query_embeddings = self.normalize_embeddings(query_embeddings)
         distances, indices = index.search(query_embeddings, k) # Shape (N, k)
 
         for i, query in enumerate(queries):
@@ -245,20 +250,25 @@ class Retriever:
         print("Testing completed!")
     
     def inference(self, queries, k = 5):
-        print("Inference started...")
+        config = self.config
+        if os.path.exists(config['embeddings_save_path']) == False:
+            print("Please generate provision embeddings first!")
+            return
 
         index = self.load_provision_embeddings()
         res = faiss.StandardGpuResources() 
         index = faiss.index_cpu_to_gpu(res, 0, index)
 
         query_embeddings = self.generate_query_embeddings(queries) # Shape (N, D)
-        query_embeddings = self.normalize_embeddings(query_embeddings)
         distances, indices = index.search(query_embeddings, k) # Shape (N, k)
 
         provision_list = []
         for i, index in enumerate(indices):
+            best_result_distance = distances[i][0]
             provisions = []
             for j in range(k):
+                if distances[i][j] - best_result_distance > 0.003:
+                    break
                 provision_idx = indices[i][j]  # Index of the provision
                 provision_name = law_list[provision_idx]['provision'] 
                 provisions.append(provision_name)
