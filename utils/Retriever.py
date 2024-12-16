@@ -10,12 +10,13 @@ from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 
 from typing import List, Dict, Tuple
+from annoy import AnnoyIndex
 import numpy as np
 from utils.LawDataset import LawDataset
 from utils.Loss import Loss
 
 import os
-import faiss
+# import faiss
 from utils.law_list import law_list
 from utils.ProvisionDataset import ProvisionDataset
 
@@ -177,27 +178,45 @@ class Retriever:
             provision_embedding = provision_outputs.last_hidden_state[:, 0, :].detach().cpu().numpy()
             provision_embeddings.extend(provision_embedding)
 
-        # FAISS: Initialize the index
         provision_embeddings = np.vstack(provision_embeddings)  
         provision_embeddings = self.normalize_embeddings(provision_embeddings)
         dim = provision_embeddings.shape[1]
         print(f"Embedding dimension: {dim}, Number of provisions: {provision_embeddings.shape[0]}")
         
+        annoy_index = AnnoyIndex(dim, 'angular')  
+        for i, embedding in enumerate(provision_embeddings):
+            annoy_index.add_item(i, embedding)
+
+        num_trees = 10  
+        annoy_index.build(num_trees)
+
         embedding_save_path = config["embeddings_save_path"]
         directory = os.path.dirname(embedding_save_path)
         if not os.path.exists(directory):
             os.makedirs(directory)
 
-        faiss_index = faiss.IndexFlatL2(dim) 
-        faiss_index.add(provision_embeddings) 
-        faiss.write_index(faiss_index, config["embeddings_save_path"])
+        annoy_index.save(embedding_save_path)
+
+        # embedding_save_path = config["embeddings_save_path"]
+        # directory = os.path.dirname(embedding_save_path)
+        # if not os.path.exists(directory):
+        #     os.makedirs(directory)
+
+        # faiss_index = faiss.IndexFlatL2(dim) 
+        # faiss_index.add(provision_embeddings) 
+        # faiss.write_index(faiss_index, config["embeddings_save_path"])
 
         print("Provision embeddings generated and saved!")
 
     def load_provision_embeddings(self):
         index_path = self.config['embeddings_save_path']
-        index = faiss.read_index(index_path)
+        index = AnnoyIndex(self.config['embedding_dim'], 'angular')  # 'angular' for cosine similarity
+        index.load(index_path) 
         return index
+    
+        # index_path = self.config['embeddings_save_path']
+        # index = faiss.read_index(index_path)
+        # return index
     
     def generate_query_embeddings(self, queries: List[str]):
         config = self.config
@@ -205,7 +224,7 @@ class Retriever:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {device}")
 
-        self.load_model(pretrained=True)
+        self.load_model(pretrained=False)
         model = self.model.to(device)
         tokenizer = self.tokenizer
 
@@ -230,21 +249,20 @@ class Retriever:
             print("Please generate provision embeddings first!")
             return
         
-        # Load provision embeddings
         index = self.load_provision_embeddings()
-        res = faiss.StandardGpuResources() 
-        index = faiss.index_cpu_to_gpu(res, 0, index)
-
         query_embeddings = self.generate_query_embeddings(queries) # Shape (N, D)
-        distances, indices = index.search(query_embeddings, k) # Shape (N, k)
 
-        for i, query in enumerate(queries):
-            print(f"\nQuery {i+1} query\n")
+        for i, query_embedding in enumerate(query_embeddings):
+            print(f"\nQuery {i+1} query")
             print(f"Top {k} nearest provisions:")
+
+            # Annoy search for top k nearest neighbors (search returns indices and distances)
+            indices, distances = index.get_nns_by_vector(query_embedding, k, include_distances=True)
+
             for j in range(k):
-                provision_idx = indices[i][j]  # Index of the provision
-                distance = distances[i][j]  # Distance to this provision
-                provision_name = law_list[provision_idx]['provision']  # Retrieve the content from the law_list
+                provision_idx = indices[j]  # Index of the provision
+                distance = distances[j]  # Distance to this provision
+                provision_name = law_list[provision_idx]['provision']  # Retrieve the provision name from the law list
                 print(f"  Provision: {provision_name}, Distance: {distance:.4f}")
 
         print("Testing completed!")
@@ -256,24 +274,24 @@ class Retriever:
             return
 
         index = self.load_provision_embeddings()
-        res = faiss.StandardGpuResources() 
-        index = faiss.index_cpu_to_gpu(res, 0, index)
-
         query_embeddings = self.generate_query_embeddings(queries) # Shape (N, D)
-        distances, indices = index.search(query_embeddings, k) # Shape (N, k)
 
         provision_list = []
-        for i, index in enumerate(indices):
-            best_result_distance = distances[i][0]
+        for i, query_embedding in enumerate(query_embeddings):
+            indices, distances = index.get_nns_by_vector(query_embedding, k, include_distances=True)
+            
+            best_result_distance = distances[0]
             provisions = []
+            
             for j in range(k):
-                if distances[i][j] - best_result_distance > 0.003:
+                if distances[j] - best_result_distance > 0.02:
                     break
-                provision_idx = indices[i][j]  # Index of the provision
-                provision_name = law_list[provision_idx]['provision'] 
+                provision_idx = indices[j]  # Index of the provision
+                provision_name = law_list[provision_idx]['provision']
                 provisions.append(provision_name)
+
             provision_list.append(provisions)
-        
+
         self.write_submission_csv(provision_list)
 
     def normalize_embeddings(self, embeddings):
