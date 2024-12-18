@@ -1,73 +1,96 @@
-from torch.utils.data import Dataset
-from transformers import AutoTokenizer
+from typing import List, Dict
 import torch
+from torch.utils.data import Dataset
 import random
-import itertools
+import jieba
 
 class LawDataset(Dataset):
-    def __init__(self, provisions, data, tokenizer, max_length):
-        self.provisions = provisions
+    def __init__(self, data: List[Dict], provision_dict: Dict, tokenizer, max_length):
         self.data = data
+        self.provisions = provision_dict
         self.tokenizer = tokenizer
         self.max_length = max_length
 
     def __len__(self):
         return len(self.data)
+    
+    def jieba_tokenize(self, text):
+        if isinstance(text, list):
+            return [self.jieba_tokenize(item) for item in text]
+        else:
+            words = jieba.cut(text)
+            return " ".join(words) 
 
+    def generate_provision_contents(self, labels):
+        contents = []
+        for label in labels:
+            if label in self.provisions.keys():
+                content = self.provisions[label]['content']
+                examples = self.provisions[label]['example']
+                concatenated_sentence = self.jieba_tokenize(content)
+                if (len(examples) > 0):
+                    concatenated_sentence += " [SEP] ".join(self.jieba_tokenize(examples))
+                contents.append(concatenated_sentence)
+        return contents
+
+    def generate_negative_labels(self, positive_labels):
+        negative_labels = []
+        for label in self.provisions.keys():
+            if label not in positive_labels:
+                negative_labels.append(label)
+        return random.sample(negative_labels, len(positive_labels))
+    
     def __getitem__(self, idx):
         title = self.data[idx]["title"] if self.data[idx]["title"] != None else ""
         question = self.data[idx]["question"] if self.data[idx]["question"] != None else ""
-        query = title + '\n' + question
-
-        labels = self.data[idx]["label"].split(",")  
-        pos_provision_contents = []
-        for label in labels:
-            if label in self.provisions.keys():
-                pos_provision_contents.append(self.provisions[label])
+        query = self.jieba_tokenize(title + '\n' + question)
+         
+        positive_labels = self.data[idx]["label"].split(",")  
+        positive_provision_contents = self.generate_provision_contents(positive_labels)
         
-        if len(pos_provision_contents) == 0:
-            for label in labels:
-                pos_provision_contents.append(label)
+        # Can't find provisions in dictionary
+        if len(positive_provision_contents) == 0: 
+            for label in positive_labels:
+                positive_provision_contents.append(label)
             
-        provision_keys = (label for label in self.provisions.keys() if label not in labels)
-        limited_keys = list(itertools.islice(provision_keys, 1000))
-        random_provisions = random.sample(limited_keys, 5)
-        neg_provision_contents = [self.provisions[key] for key in random_provisions]
-        # neg_provision_contents = [self.provisions[label] for label in self.provisions.keys() if label not in labels]
+        # Hard negative sampling
+        negative_labels = self.generate_negative_labels(positive_labels)
+        negative_provision_contents = self.generate_provision_contents(negative_labels)
         
+        # Tokenizer
         query_tokens = self.tokenizer(query, padding='max_length', max_length=self.max_length, truncation=True, return_tensors="pt")
-        pos_provision_tokens = self.tokenizer(pos_provision_contents, padding='max_length', max_length=self.max_length, truncation=True, return_tensors="pt")
-        neg_provision_tokens = self.tokenizer(neg_provision_contents, padding='max_length', max_length=self.max_length, truncation=True, return_tensors="pt")
+        positive_provision_tokens = self.tokenizer(positive_provision_contents, padding='max_length', max_length=self.max_length, truncation=True, return_tensors="pt")
+        negative_provision_tokens = self.tokenizer(negative_provision_contents, padding='max_length', max_length=self.max_length, truncation=True, return_tensors="pt")
 
-        return query_tokens['input_ids'].squeeze(), pos_provision_tokens['input_ids'], neg_provision_tokens['input_ids']
+        return query_tokens['input_ids'].squeeze(), positive_provision_tokens['input_ids'], negative_provision_tokens['input_ids']
     
-    def custom_collate_fn(self, batch, device):
-        queries, pos_provisions, neg_provisions = zip(*batch)
+    def custom_collate_fn(self, batch):
+        queries, positive_provisions, negative_provisions = zip(*batch)
 
-        # 1️⃣ Pad and stack queries (shape: [batch_size, max_query_length])
-        queries = torch.stack(queries)  # Each query has shape (seq_len,)
+        # 1️. Pad and stack queries (shape: [batch_size, max_query_length])
+        queries = torch.stack(queries)  
         
-        # 2️⃣ Pad and stack positive provisions (shape: [batch_size, max_num_pos, max_seq_len])
-        max_num_pos = max(pos.shape[0] for pos in pos_provisions)  # Find the maximum number of positive provisions in the batch
-        padded_pos_provisions = []
-        for pos in pos_provisions:
-            if pos.shape[0] < max_num_pos:  # Pad provision list to max_num_pos
-                pad = torch.zeros(max_num_pos - pos.shape[0], pos.shape[1], dtype=pos.dtype)  # (num_pad, seq_len)
-                pos = torch.cat([pos, pad], dim=0)  # Pad to (max_num_pos, seq_len)
-            padded_pos_provisions.append(pos)
+        # 2️. Pad and stack positive provisions (shape: [batch_size, max_num_positive, max_seq_len])
+        max_num_pos = max(pos.shape[0] for pos in positive_provisions) 
+        padded_positive_provisions = []
+        for pos in positive_provisions:
+            if pos.shape[0] < max_num_pos: 
+                pad = torch.zeros(max_num_pos - pos.shape[0], pos.shape[1], dtype=pos.dtype)
+                pos = torch.cat([pos, pad], dim=0) 
+            padded_positive_provisions.append(pos)
 
-        pos_provisions = torch.stack(padded_pos_provisions)  # (batch_size, max_num_pos, max_seq_len)
+        positive_provisions = torch.stack(padded_positive_provisions)  
 
-        # 3️⃣ Pad and stack negative provisions (shape: [batch_size, max_num_neg, max_seq_len])
-        max_num_neg = max(neg.shape[0] for neg in neg_provisions)  # Find the maximum number of negative provisions in the batch
-        padded_neg_provisions = []
-        for neg in neg_provisions:
-            if neg.shape[0] < max_num_neg:  # Pad provision list to max_num_neg
-                pad = torch.zeros(max_num_neg - neg.shape[0], neg.shape[1], dtype=neg.dtype)  # (num_pad, seq_len)
-                neg = torch.cat([neg, pad], dim=0)  # Pad to (max_num_neg, seq_len)
-            padded_neg_provisions.append(neg)
-        neg_provisions = torch.stack(padded_neg_provisions)  # (batch_size, max_num_neg, max_seq_len)
+        # 3️. Pad and stack negative provisions (shape: [batch_size, max_num_negative, max_seq_len])
+        max_num_negative = max(negative.shape[0] for negative in negative_provisions) 
+        padded_negative_provisions = []
+        for negative in negative_provisions:
+            if negative.shape[0] < max_num_negative:  
+                pad = torch.zeros(max_num_negative - negative.shape[0], negative.shape[1], dtype=negative.dtype) 
+                negative = torch.cat([negative, pad], dim=0) 
+            padded_negative_provisions.append(negative)
+        negative_provisions = torch.stack(padded_negative_provisions) 
         
-        return queries, pos_provisions, neg_provisions
+        return queries, positive_provisions, negative_provisions
 
     
