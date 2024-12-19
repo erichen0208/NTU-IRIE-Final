@@ -1,0 +1,10 @@
+{
+    "tokenizer_name": "taide/TAIDE-LX-7B-Chat",
+    "model_name": "taide/TAIDE-LX-7B-Chat",
+    "train_data_path": "./data/txt/continue_learning_data.txt",
+    "model_save_path": "./models/pretrain/llm",
+    "epochs": 3,
+    "batch_size": 1,
+    "max_length": 256,
+    "learning_rate": 1e-5
+}

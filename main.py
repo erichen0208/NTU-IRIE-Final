@@ -5,29 +5,37 @@ import os
 
 def main():
     parser = argparse.ArgumentParser(description="Legal Document Retrieval System")
-    parser.add_argument('--mode', type=str, default='train', choices=['pretrain', 'train', 'generate', 'inference', 'test'], help='Mode to run: train, inference, test')
-    parser.add_argument('--config', type=str, default='config.json', help='Path to the configuration file')
+    parser.add_argument('--mode', type=str, default='llm', choices=['llm', 'bert', 'finetune', 'generate', 'inference', 'test', 'test_embeddings'], help='Mode to run: train, inference, test')
 
     args = parser.parse_args()
 
-    custom_cache_path = os.path.expanduser('~/.cache/jieba/')
-    os.makedirs(custom_cache_path, exist_ok=True)
-    os.environ['JIEBA_CACHE_DIR'] = custom_cache_path
+    if args.mode == 'llm':
+        print("Starting continue learning for llm mode...")
+
+        from utils.Pretrain import pretrain
+        with open('pretrain_llm_config.json', 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        pretrain(mode='llm', config=config)
+        return
+    
+    elif args.mode == 'bert':
+        print("Starting continue learning for bert mode...")
+
+        from utils.Pretrain import pretrain
+        with open('pretrain_bert_config.json', 'r', encoding='utf-8') as f:
+            config = json.load(f)
+
+        pretrain(mode='bert', config=config)
+        return
 
     # Load configuration
-    with open(args.config, 'r', encoding='utf-8') as f:
+    with open('finetune_bert_config.json', 'r', encoding='utf-8') as f:
         config = json.load(f)
-
-    if args.mode == 'pretrain':
-        print("Starting pretrain mode...")
-
-        from utils.Pretrain import pretrain      
-        pretrain(config)
-        return
 
     retriever = Retriever(config)
 
-    if args.mode == 'train':
+    if args.mode == 'finetune':
         print("Starting train mode...")
 
         from data.py.train_list import train_list
@@ -54,8 +62,9 @@ def main():
                 question = item["question"] if item["question"] != None else ""
                 query = title + '\n' + question
                 queries.append(query)    
+        from data.py.provision_list import provision_list
 
-        retriever.inference(queries)
+        retriever.inference(provision_list, queries)
 
     elif args.mode == 'test':
         print("Starting test mode...")
@@ -69,8 +78,15 @@ def main():
             query = title + '\n' + question
             queries.append(query)
             labels.append(val_data["label"].split(','))
+        from data.py.provision_list import provision_list
 
-        retriever.test(queries, labels)
+        retriever.test(provision_list, queries, labels)
+    
+    elif args.mode == 'test_embeddings':
+        print("Starting test embeddings mode...")
+
+        retriever.test_embeddings()
+        return
 
 if __name__ == '__main__':
     main()

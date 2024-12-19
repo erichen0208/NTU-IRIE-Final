@@ -1,0 +1,10 @@
+{
+    "tokenizer_name": "bert-base-chinese",
+    "model_name": "ckiplab/bert-base-chinese-ws",
+    "train_data_path": "./data/txt/continue_learning_data.txt",
+    "model_save_path": "./models/pretrain/bert",
+    "epochs": 3,
+    "batch_size": 16,
+    "max_length": 512,
+    "learning_rate": 5e-6
+}

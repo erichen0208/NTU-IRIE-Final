@@ -73,6 +73,7 @@ def main():
     #     py_file.write(json.dumps(provision_list, ensure_ascii=False, indent=4))
 
 def prepare_data_pretrain():
+    from data.py.provision_list import provision_list
     data = []
     for i in range(len(provision_list)):
         data.append(provision_list[i]['genere'])
@@ -81,7 +82,7 @@ def prepare_data_pretrain():
             if (len(item['example']) > 0):
                 data.extend(item['example'])
     
-    with open("./data/train_data.jsonl", 'r', encoding='utf-8') as f:
+    with open("./data/json/train_data.jsonl", 'r', encoding='utf-8') as f:
         for line in f:
             item = json.loads(line)
             if(item['title']):
@@ -89,7 +90,7 @@ def prepare_data_pretrain():
             if(item['question']):   
                 data.append(item['question'])
 
-    with open("./data/test_data.jsonl", 'r', encoding='utf-8') as f:
+    with open("./data/json/test_data.jsonl", 'r', encoding='utf-8') as f:
         for line in f:
             item = json.loads(line)
             if(item['title']):
@@ -97,9 +98,13 @@ def prepare_data_pretrain():
             if(item['question']):   
                 data.append(item['question'])
     
-    with open("./data/pretrain_data.txt", 'w', encoding='utf-8') as f:
+    with open("./data/txt/pretrain_data.txt", 'w', encoding='utf-8') as f:
         for line in data:
-            f.write(line)
+            line = line.split("\n")
+            line = "".join(line)
+            line = re.sub(r'^[一二三四五六七八九十]+、', '', line)
+            line = line.replace(' ', '')
+            f.write(line + '\n')
 
 def provision_list_json():
     from data.py.provision_list import provision_list

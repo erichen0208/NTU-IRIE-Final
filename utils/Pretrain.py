@@ -1,5 +1,7 @@
 import torch
 from transformers import (
+    AutoTokenizer,
+    AutoModelForCausalLM,
     BertTokenizer, 
     BertForMaskedLM, 
     LineByLineTextDataset,
@@ -7,68 +9,61 @@ from transformers import (
     Trainer, 
     TrainingArguments
 )
-import jieba
 
 class LegalCorpusPretrainer:
-    def __init__(self, config):
+    def __init__(self, mode, config):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {self.device}")
 
         # Load base model and tokenizer
-        self.config = config    
-        self.tokenizer = BertTokenizer.from_pretrained(config["tokenizer_name"])
-        self.model = BertForMaskedLM.from_pretrained(config["model_name"])
-        
-        # Corpus path
-        self.legal_corpus_path = './data/pretrain_data.txt'
-        self.output_dir = config["pretrained_model_path"]
+        self.mode = mode
+        self.config = config 
 
-    def jieba_tokenize(self, text):
-        """
-        Tokenize text using Jieba.
-        Converts a string into a list of Chinese word tokens.
-        """
-        words = jieba.cut(text)
-        return " ".join(words) 
+        if mode == 'llm':
+            self.tokenizer = AutoTokenizer.from_pretrained(config["tokenizer_name"])
+            self.model = AutoModelForCausalLM.from_pretrained(config["model_name"])
+        elif mode == 'bert':
+            self.tokenizer = BertTokenizer.from_pretrained(config["tokenizer_name"])
+            self.model = BertForMaskedLM.from_pretrained(config["model_name"])
 
     def prepare_dataset(self):
-        # Create dataset from legal corpus
-        # with open(self.legal_corpus_path, 'r', encoding='utf-8') as f:
-        #     lines = f.readlines()
-
-        # # Apply Jieba tokenization to each line
-        # tokenized_lines = [self.jieba_tokenize(line.strip()) for line in lines]
-
-        # # Save the tokenized corpus as a temporary file
-        # tokenized_corpus_path = './data/tokenized_pretrain_data.txt'
-        # with open(tokenized_corpus_path, 'w', encoding='utf-8') as f:
-        #     f.write("\n".join(tokenized_lines))
-
-        tokenized_corpus_path = './data/tokenized_pretrain_data.txt'
+        train_data_path = self.config["train_data_path"]
         # Create dataset from legal corpus
         dataset = LineByLineTextDataset(
             tokenizer=self.tokenizer,
-            file_path=tokenized_corpus_path,
-            block_size=128  # Adjust based on your document lengths
+            file_path=train_data_path,
+            block_size=self.config["max_length"]
         )
         return dataset
 
     def prepare_data_collator(self):
         # Data collator for masked language modeling
-        return DataCollatorForLanguageModeling(
-            tokenizer=self.tokenizer, 
-            mlm=True,  # Masked Language Modeling
-            mlm_probability=0.15  # Mask 15% of tokens
-        )
+        if self.mode == 'bert':
+            return DataCollatorForLanguageModeling(
+                tokenizer=self.tokenizer, 
+                mlm=True,  # Masked Language Modeling
+                mlm_probability=0.15  # Mask 15% of tokens
+            )
+        elif self.mode == 'llm':
+            return DataCollatorForLanguageModeling(
+                tokenizer=self.tokenizer, 
+                mlm=False
+            )
 
-    def train(self, epochs=3, batch_size=16, learning_rate=5e-5):
+    def train(self):
+        # Training parameters
+        epochs = self.config["epochs"]
+        batch_size = self.config["batch_size"]
+        learning_rate = self.config["learning_rate"]
+        output_dir = self.config["model_save_path"]
+
         # Prepare dataset and data collator
         train_dataset = self.prepare_dataset()
         data_collator = self.prepare_data_collator()
 
         # Training arguments
         training_args = TrainingArguments(
-            output_dir=self.output_dir,
+            output_dir=output_dir,
             overwrite_output_dir=True,
             num_train_epochs=epochs,
             per_device_train_batch_size=batch_size,
@@ -80,7 +75,8 @@ class LegalCorpusPretrainer:
             logging_dir='./logs',
             logging_steps=100,
             no_cuda=False, 
-            # device=self.device
+            fp16=True,  
+            gradient_accumulation_steps=8,
         )
 
         # Initialize Trainer
@@ -92,15 +88,17 @@ class LegalCorpusPretrainer:
         )
 
         # Start training
+        print("Starting training...")
         trainer.train()
 
         # Save final model
-        self.model.save_pretrained(self.output_dir)
-        self.tokenizer.save_pretrained(f"{self.output_dir}/tokenizer")
+        self.model.save_pretrained(self.config["model_save_path"])
+        self.tokenizer.save_pretrained(self.config["model_save_path"])
+        print("Training completed.")
 
-def pretrain(config):
+def pretrain(mode, config):
     # Initialize and train
-    pretrainer = LegalCorpusPretrainer(config)
+    pretrainer = LegalCorpusPretrainer(mode, config)
     pretrainer.train()
 
 

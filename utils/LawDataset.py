@@ -2,7 +2,6 @@ from typing import List, Dict
 import torch
 from torch.utils.data import Dataset
 import random
-import jieba
 
 class LawDataset(Dataset):
     def __init__(self, data: List[Dict], provision_dict: Dict, tokenizer, max_length):
@@ -13,13 +12,6 @@ class LawDataset(Dataset):
 
     def __len__(self):
         return len(self.data)
-    
-    def jieba_tokenize(self, text):
-        if isinstance(text, list):
-            return [self.jieba_tokenize(item) for item in text]
-        else:
-            words = jieba.cut(text)
-            return " ".join(words) 
 
     def generate_provision_contents(self, labels):
         contents = []
@@ -27,9 +19,9 @@ class LawDataset(Dataset):
             if label in self.provisions.keys():
                 content = self.provisions[label]['content']
                 examples = self.provisions[label]['example']
-                concatenated_sentence = self.jieba_tokenize(content)
+                concatenated_sentence = content
                 if (len(examples) > 0):
-                    concatenated_sentence += " [SEP] ".join(self.jieba_tokenize(examples))
+                    concatenated_sentence += " [SEP] ".join(examples)
                 contents.append(concatenated_sentence)
         return contents
 
@@ -43,7 +35,7 @@ class LawDataset(Dataset):
     def __getitem__(self, idx):
         title = self.data[idx]["title"] if self.data[idx]["title"] != None else ""
         question = self.data[idx]["question"] if self.data[idx]["question"] != None else ""
-        query = self.jieba_tokenize(title + '\n' + question)
+        query = title + '\n' + question
          
         positive_labels = self.data[idx]["label"].split(",")  
         positive_provision_contents = self.generate_provision_contents(positive_labels)
