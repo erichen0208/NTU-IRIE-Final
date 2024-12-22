@@ -2,10 +2,15 @@ import argparse
 import json
 from utils.Retriever import Retriever
 import os
+from utils.preprocess.data_preprocess import generate_keyword_train_list
+import numpy as np
 
 def main():
+
+    # generate_keyword_train_list()
+    # return
     parser = argparse.ArgumentParser(description="Legal Document Retrieval System")
-    parser.add_argument('--mode', type=str, default='llm', choices=['llm', 'bert', 'finetune', 'generate', 'inference', 'test', 'test_embeddings'], help='Mode to run: train, inference, test')
+    parser.add_argument('--mode', type=str, default='llm', choices=['llm', 'bert', 'finetune', 'generate', 'inference', 'test', 'test_embeddings', 'interaction'], help='Mode to run: train, inference, test')
 
     args = parser.parse_args()
 
@@ -34,19 +39,21 @@ def main():
         config = json.load(f)
 
     retriever = Retriever(config)
-
+    
     if args.mode == 'finetune':
-        print("Starting train mode...")
+        print("Starting finetine bert model mode...")
 
-        from data.py.train_list import train_list
+        # from data.py.train_list import train_list
+        from data.py.train_list_new import train_list
         with open("./data/json/provision_dict.json", 'r', encoding='utf-8') as f:
             provision_dict = json.load(f)
 
-        retriever.train(train_list, provision_dict)
+        retriever.finetune(train_list, provision_dict)
 
     elif args.mode == 'generate':
         print("Starting provision embeddings generation mode...")
 
+        # from data.py.provision_list import provision_list
         from data.py.provision_list import provision_list
         retriever.generate_provision_embeddings(provision_list)
 
@@ -69,17 +76,29 @@ def main():
     elif args.mode == 'test':
         print("Starting test mode...")
         from data.py.val_list import val_list
+        from data.py.provision_list import provision_list
         
         queries = [] # list of text
         labels = [] # list of [list of labels]
-        for val_data in val_list[:3]:
+        for val_data in val_list[:10]:
             title = val_data["title"] if val_data["title"] != None else ""
             question = val_data["question"] if val_data["question"] != None else ""
             query = title + '\n' + question
             queries.append(query)
             labels.append(val_data["label"].split(','))
-        from data.py.provision_list import provision_list
 
+        for i in range(len(provision_list)):
+            if provision_list[i]["genere"] == "中華民國刑法":
+                provision_list = provision_list[i]["provisions"]
+                break
+
+        queries = ["勞工、雇主、特休假、勞動契約、預告期、抵充、交接",
+                   "妨礙自由、強硬填入、貸款、資料",
+                   "醫師、病歷、醫療糾紛、訴訟、責任、糾紛、雙方"
+                ]
+        labels = [["勞動基準法第15條", "勞動基準法第38條"],
+                  ["中華民國刑法第302條"],
+                  ["中華民國刑法第215條","醫師法第12條"",醫療法第104條","醫療法第67條","醫療法第68條","醫療法第74條"]]
         retriever.test(provision_list, queries, labels)
     
     elif args.mode == 'test_embeddings':
@@ -87,6 +106,9 @@ def main():
 
         retriever.test_embeddings()
         return
+
+    else:  
+        retriever.interaction()
 
 if __name__ == '__main__':
     main()

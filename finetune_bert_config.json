@@ -1,16 +1,15 @@
 {
-    "tokenizer_name": "bert-base-chinese",
-    "model_name": "ckiplab/bert-base-chinese-ws",
-    "provision_path": "./data/provision_list.jsonl",
-    "train_data_path": "./data/train_data.jsonl",
-    "test_data_path": "./data/test_data.jsonl",
-    "model_save_path": "./models/bert_model",
-    "pretrained_model_path": "./models/pretrain_model",
+    "tokenizer_path": "./models/pretrain/bert",
+    "model_path": "./models/pretrain/bert",
+    "provision_path": "./data/json/provision_dict.json",
+    "train_data_path": "./data/json/train_data.jsonl",
+    "test_data_path": "./data/json/test_data.jsonl",
+    "pth_save_path": "./models/finetune/bert.pth",
     "embeddings_save_path": "./embeddings",
-    "embedding_dim": 768,
+    "embedding_dim": 256,
     "output_csv_path": "./data/submission.csv",
-    "epochs": 3,
-    "batch_size": 8,
-    "max_length": 256,
-    "learning_rate": 5e-6
+    "epochs": 10,
+    "batch_size": 32,
+    "max_length": 512,
+    "learning_rate": 1e-6
 }

@@ -101,6 +101,5 @@ def pretrain(mode, config):
     pretrainer = LegalCorpusPretrainer(mode, config)
     pretrainer.train()
 
-
 if __name__ == '__main__':
     pretrain()

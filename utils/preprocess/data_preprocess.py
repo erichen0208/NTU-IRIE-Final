@@ -68,6 +68,7 @@ def main():
     with open("./provision_list.jsonl", 'w', encoding='utf-8') as jsonl_file:
         for provision in provision_list:
             jsonl_file.write(json.dumps(provision, ensure_ascii=False) + '\n')
+            
     # with open("./provision_list.py", 'w', encoding='utf-8') as py_file:
     #     py_file.write("provision_list = ")
     #     py_file.write(json.dumps(provision_list, ensure_ascii=False, indent=4))
@@ -118,7 +119,37 @@ def provision_list_json():
 
     with open("./data/provision.json", 'w', encoding='utf-8') as f:
         f.write(json.dumps(d, ensure_ascii=False, indent=4))
-        
+
+def generate_keyword_train_list():    
+    from data.py.train_list_with_neg import train_list
+    keywords = []
+    with open("./data/json/law_with_examples.jsonl", 'r', encoding='utf-8') as f:
+        for line in f:
+            item = json.loads(line)
+            keywords.append(item["keyword"])
+    
+    questions = []
+    with open("./data/json/train_data.jsonl", 'r', encoding='utf-8') as f:
+        for line in f:
+            item = json.loads(line)
+            questions.append(item["question"] if item["question"] != None else "")
+    
+    print(len(train_list), len(keywords), len(questions))
+    res = []
+    for i, item in enumerate(train_list):
+        pos_labels = item["label"].split(',')
+        neg_labels = item["neg_label"].split(',')
+        keywords[i] = keywords[i].strip(": 。")
+
+        for label in pos_labels:
+            res.append({"title": item["title"], "keyword": keywords[i], "question": questions[i], "label": label, "rel": 1})
+        for label in neg_labels:
+            res.append({"title": item["title"], "keyword": keywords[i], "question": questions[i], "label": label, "rel": 0})
+    
+    with open("./data/py/train_list_new.py", 'w', encoding='utf-8') as py_file:
+        py_file.write("train_list = ")
+        py_file.write(json.dumps(res, ensure_ascii=False, indent=4))
+
 if __name__ == '__main__':
     # prepare_data_pretrain()
     # data = []
@@ -132,4 +163,6 @@ if __name__ == '__main__':
     #     for line in data:
     #         f.write(line)
 
-    provision_list_json()
+    # provision_list_json()
+    generate_keyword_train_list()
+

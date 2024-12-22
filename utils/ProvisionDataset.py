@@ -10,12 +10,17 @@ class ProvisionDataset(Dataset):
         return len(self.provisions)
 
     def __getitem__(self, idx):
+        provision_name = self.provisions[idx]['name']
         provision_content = self.provisions[idx]['content']
-        provision_examples = self.provisions[idx]['example']
-        input_sentence = provision_content
-        if len(provision_examples) > 0:
-            input_sentence += " [SEP] ".join(provision_examples)
-
-        provision_input = self.tokenizer(input_sentence, padding='max_length', max_length=self.max_length, truncation=True, return_tensors="pt")
-        return provision_input['input_ids'].squeeze(0)
+        provision_example = "".join(self.provisions[idx]['example']) if self.provisions[idx]['example'] != None else ""
+        provision_content += provision_example
+        
+        provision_input = self.tokenizer(
+            provision_content, 
+            padding='max_length', 
+            max_length=self.max_length, 
+            truncation=True, 
+            return_tensors="pt"
+        )
+        return provision_name, provision_input['input_ids'].squeeze(0)
     
