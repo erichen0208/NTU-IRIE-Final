@@ -6,6 +6,7 @@ models/
 embeddings/
 submissions.csv
 =*
+plots/
 
 # Common
 .DS_Store

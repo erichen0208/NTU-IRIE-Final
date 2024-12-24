@@ -6,7 +6,7 @@ from transformers import (
     AutoConfig,
 )
 
-class BertModel(nn.Module):
+class InteractionModel(nn.Module):
     def __init__(self, config, device, mode='inference'):
         super().__init__()
         self.device = device
@@ -113,8 +113,8 @@ class DenseModel(nn.Module):
         self.model.to(device)
         self.pool = self._init_pool().to(device)
 
-        # if mode != 'finetune':
-        self.load_model(config['pth_save_path'])
+        if mode != 'finetune':
+            self.load_model(config['pth_save_path'])
 
     def _init_pool(self):
         hidden_size = self.model.config.hidden_size
@@ -158,7 +158,7 @@ class DenseModel(nn.Module):
 
         return normalized_embedding
     
-    def save_model(self, model_save_path, epoch, optimizer, loss):
+    def save_model(self, pth_save_path, epoch, optimizer, loss):
         """
         Save everything in one file
         """
@@ -170,7 +170,7 @@ class DenseModel(nn.Module):
             },
             'optimizer_state_dict': optimizer.state_dict(),
             'loss': loss
-        }, model_save_path)
+        }, pth_save_path)
 
     def load_model(self, pth_save_path):
         """
@@ -178,22 +178,16 @@ class DenseModel(nn.Module):
         """
         device = self.device
         checkpoint = torch.load(pth_save_path, map_location=device) 
-        print(f"Keys in checkpoint: {list(checkpoint.keys())}")
+        # print(f"Keys in checkpoint: {list(checkpoint.keys())}")
 
         if 'model_state_dict' in checkpoint:
             # Load BERT weights
             bert_weights = checkpoint['model_state_dict']['model']
             missing_keys, unexpected_keys = self.model.load_state_dict(bert_weights, strict=False)
-            print(f"BERT missing keys: {missing_keys}")
-            print(f"BERT unexpected keys: {unexpected_keys}")
             
             # Load pool weights
             pool_weights = checkpoint['model_state_dict']['pool']
             missing_keys, unexpected_keys = self.pool.load_state_dict(pool_weights, strict=False)
-            print(f"pool missing keys: {missing_keys}")
-            print(f"pool unexpected keys: {unexpected_keys}")
         else:
             # Load entire model
             missing_keys, unexpected_keys = self.load_state_dict(checkpoint, strict=False)
-            print(f"Missing keys: {missing_keys}")
-            print(f"Unexpected keys: {unexpected_keys}")

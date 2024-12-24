@@ -4,6 +4,7 @@ from utils.Retriever import Retriever
 import os
 from utils.preprocess.data_preprocess import generate_keyword_train_list
 import numpy as np
+from sklearn.model_selection import train_test_split
 
 def main():
 
@@ -14,6 +15,7 @@ def main():
 
     args = parser.parse_args()
 
+    # Continue learning for llm or bert
     if args.mode == 'llm':
         print("Starting continue learning for llm mode...")
 
@@ -33,80 +35,81 @@ def main():
 
         pretrain(mode='bert', config=config)
         return
-
-    # Load configuration
-    with open('finetune_bert_config.json', 'r', encoding='utf-8') as f:
-        config = json.load(f)
-
-    retriever = Retriever(config)
     
+    # Finetine / Generate / Inference / Test
     if args.mode == 'finetune':
         print("Starting finetine bert model mode...")
 
+        # Load configuration
+        with open('finetune_config.json', 'r', encoding='utf-8') as f:
+            config = json.load(f)
+
         # from data.py.train_list import train_list
-        from data.py.train_list_new import train_list
-        with open("./data/json/provision_dict.json", 'r', encoding='utf-8') as f:
+        from data.py.train_list_with_keyword_and_rel import train_list
+        with open(config['provision_dict_path'], 'r', encoding='utf-8') as f:
             provision_dict = json.load(f)
 
+        retriever = Retriever(config)
         retriever.finetune(train_list, provision_dict)
 
     elif args.mode == 'generate':
         print("Starting provision embeddings generation mode...")
 
-        # from data.py.provision_list import provision_list
+        # Load configuration
+        with open('finetune_config.json', 'r', encoding='utf-8') as f:
+            config = json.load(f)
+
         from data.py.provision_list import provision_list
+
+        retriever = Retriever(config)
         retriever.generate_provision_embeddings(provision_list)
 
     elif args.mode == 'inference':
         print("Starting inference mode...")
+
+        # Load configuration
+        with open('inference_config.json', 'r', encoding='utf-8') as f:
+            config = json.load(f)
         
-        # Load queries (list of text)
-        queries = []
+        from data.py.provision_list import provision_list
+        
+        test_list = []
         with open(config['test_data_path'], 'r', encoding='utf-8') as f:
             for line in f:
                 item = json.loads(line)
-                title = item["title"] if item["title"] != None else ""
-                question = item["question"] if item["question"] != None else ""
-                query = title + '\n' + question
-                queries.append(query)    
-        from data.py.provision_list import provision_list
+                test_list.append(item)
 
-        retriever.inference(provision_list, queries)
+        retriever = Retriever(config)
+        retriever.inference(test_list)
 
     elif args.mode == 'test':
         print("Starting test mode...")
-        from data.py.val_list import val_list
-        from data.py.provision_list import provision_list
+
+        # Load configuration
+        with open('inference_config.json', 'r', encoding='utf-8') as f:
+            config = json.load(f)
         
-        queries = [] # list of text
-        labels = [] # list of [list of labels]
-        for val_data in val_list[:10]:
-            title = val_data["title"] if val_data["title"] != None else ""
-            question = val_data["question"] if val_data["question"] != None else ""
-            query = title + '\n' + question
-            queries.append(query)
-            labels.append(val_data["label"].split(','))
+        train_list = []
+        with open(config["train_data_path"], 'r', encoding='utf-8') as f:
+            for line in f:
+                item = json.loads(line)
+                train_list.append(item)
 
-        for i in range(len(provision_list)):
-            if provision_list[i]["genere"] == "中華民國刑法":
-                provision_list = provision_list[i]["provisions"]
-                break
+        _, val_list = train_test_split(train_list, test_size=0.2, random_state=42)
 
-        queries = ["勞工、雇主、特休假、勞動契約、預告期、抵充、交接",
-                   "妨礙自由、強硬填入、貸款、資料",
-                   "醫師、病歷、醫療糾紛、訴訟、責任、糾紛、雙方"
-                ]
-        labels = [["勞動基準法第15條", "勞動基準法第38條"],
-                  ["中華民國刑法第302條"],
-                  ["中華民國刑法第215條","醫師法第12條"",醫療法第104條","醫療法第67條","醫療法第68條","醫療法第74條"]]
-        retriever.test(provision_list, queries, labels)
+        retriever = Retriever(config)
+        retriever.test(val_list)
     
     elif args.mode == 'test_embeddings':
         print("Starting test embeddings mode...")
 
-        retriever.test_embeddings()
-        return
+        # Load configuration
+        with open('inference_config.json', 'r', encoding='utf-8') as f:
+            config = json.load(f)
 
+        retriever = Retriever(config)
+        retriever.test_embeddings()
+        
     else:  
         retriever.interaction()
 

@@ -1,0 +1,12 @@
+{
+    "tokenizer_path": "./models/pretrain/bert",
+    "model_path": "./models/pretrain/bert",
+    "pth_save_path": "./models/finetune/bert.pth",
+    "provision_dict_path": "./data/json/provision_dict.json",
+    "train_data_path": "./data/json/train_with_keyword.jsonl",
+    "embeddings_save_path": "./embeddings/provision_embeddings.npy",
+    "epochs": 10,
+    "batch_size": 32,
+    "max_length": 512,
+    "learning_rate": 1e-6
+}

@@ -23,8 +23,19 @@ To set up the environment and install the necessary dependencies, follow these s
 
 ## Usage
 
-### To run the main script and retrieve relevant legal documents, use the following command:
+Firstly, we do continue pre-training for bert model:
 ```python
-CUDA_VISIBLE_DEVICES=2 python main.py --mode inference
+CUDA_VISIBLE_DEVICES=0 python main.py --mode bert
 ```
-The mode has 'llm', 'bert', 'finetune', 'generate', 'inference', 'test', 'test_embeddings', choose one to use
+Second, we fine tune the bert model on the training data:
+```python
+CUDA_VISIBLE_DEVICES=0 python main.py --mode finetune
+```
+Third, we generate the law embeddings:
+```python
+CUDA_VISIBLE_DEVICES=0 python main.py --mode generate
+```
+Lastly, we inference the test data and output submission.csv:
+```python
+CUDA_VISIBLE_DEVICES=0 python main.py --mode inference
+```
